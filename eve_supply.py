@@ -2,12 +2,9 @@ import evelink.char # Wrapped API access for the /char/ API path
 import time         # for time.time()
 
 eve = evelink.eve.EVE()
-api = evelink.api.API(api_key=(1288525, 'xUHKT2V7j0lsIlSWq7D8MQrxelPiNFad2MS6fa5xJrbeC8haJ1HpVmRLk73IAO8g'))
-id_response = eve.character_id_from_name("Emerald Placide")
+api = evelink.api.API(api_key=(1234567, 'Your verification code here'))
+id_response = eve.character_id_from_name("Your name here")
 char = evelink.char.Char(char_id = id_response.result, api=api)
-print("Getting balance...")
-balance_response = char.wallet_balance()
-print(balance_response.result)
 
 #some time markers that will be handy when reading market transactions
 time_today = time.time()
@@ -54,8 +51,9 @@ class inventory_item(object):
         if not self.type_name:
             self.type_name = trans['type']['name']
     def add_order(self, order):
-        self.stats_current = False
-        self.orders.append(order)
+        if order['type'] == 'sell':
+            self.stats_current = False
+            self.orders.append(order)
     def update_sale_stats(self):
         self.month_sales = 0
         self.month_revenue = 0
@@ -96,10 +94,11 @@ class inventory_item(object):
                 self.on_sale[order['station_id']] = self.on_sale[order['station_id']] + order['amount_left']
                 self.total_on_sale = self.total_on_sale + order['amount_left']
     def calculate_stats(self):
-        self.update_sale_stats()
-        self.update_purchase_stats()
-        self.update_inventory_stats()
-        self.stats_current = True
+        if not self.stats_current:
+            self.update_sale_stats()
+            self.update_purchase_stats()
+            self.update_inventory_stats()
+            self.stats_current = True
     def print_general_stats(self):
         if not self.stats_current:
             self.calculate_stats()
@@ -116,8 +115,12 @@ class inventory_item(object):
     def time_to_exhaustion(self):
         if not self.stats_current:
             self.calculate_stats()
-        duration_month = 1000
-        duration_week = 1000
+        if self.total_on_sale > 0:
+            duration_month = 1000
+            duration_week = 1000
+        else:
+            duration_month = 0
+            duration_week = 0
         if self.month_sales > 0:
             duration_month = (30.0 * self.total_on_sale) / self.month_sales
         if self.week_sales > 0:
@@ -140,7 +143,7 @@ def get_transactions():
     time_month = time_today - (60*60*24*30)
     oldest_trans_time = time_today
     oldest_trans_id = 0
-
+    print("Getting transactions...")
     transactions, current, expires = char.wallet_transactions(limit=2560)
     while transactions:
         for trans in transactions:
@@ -155,8 +158,10 @@ def get_transactions():
         print("Oldest transaction processed is " + time.asctime(time.gmtime(oldest_trans_time)))
         print("Walking to older transactions.")
         transactions, current, expires = char.wallet_transactions(before_id = oldest_trans_id, limit=2560)
+    print("Done.")
 
 def get_orders():
+    print("Getting orders..."
     orders, current, expires = char.orders()
     for order_id in orders:
         order = orders[order_id]
@@ -164,10 +169,25 @@ def get_orders():
         if order_type not in inventory:
             inventory[order_type] = inventory_item(order_type)
         inventory[order_type].add_order(order)
+    print("Done.")
 
 def print_urgent_orders():
-    filtered_items = filter(lambda item: (item.time_to_exhaustion() < 2), inventory.values())
+    filtered_items = filter(lambda item: (item.time_to_exhaustion() < 2 and item.week_sales > 0), inventory.values())
     for item in sorted(filtered_items, key=lambda item: item.est_profit()):
+        item.print_general_stats()
+
+def print_exhausted_month():
+    filtered_items = filter(lambda item: (item.time_to_exhaustion() == 0 and item.month_sales > 0), inventory.values())
+    for item in sorted(filtered_items, key=lambda item: item.est_profit()):
+        item.print_general_stats()
+
+def print_all_orders():
+    for item in sorted(inventory.values(), key=lambda item: item.est_profit()):
+        item.print_general_stats()
+
+def print_idle_orders():
+    filtered_items = filter(lambda item: (item.time_to_exhaustion() > 0 and item.week_sales == 0), inventory.values())
+    for item in sorted(filtered_items, key=lambda item: item.est_profit(), reverse=True):
         item.print_general_stats()
 
 get_transactions()
