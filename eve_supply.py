@@ -1,10 +1,6 @@
-import evelink.char # Wrapped API access for the /char/ API path
+import configparser # To get characters and credentials
+import evelink      # Wrapped API access for the /char/ API path
 import time         # for time.time()
-
-eve = evelink.eve.EVE()
-api = evelink.api.API(api_key=(1234567, 'Your verification code here'))
-id_response = eve.character_id_from_name("Your name here")
-char = evelink.char.Char(char_id = id_response.result, api=api)
 
 #some time markers that will be handy when reading market transactions
 time_today = time.time()
@@ -12,6 +8,20 @@ time_today = time.time()
 time_week = time_today - (60*60*24*7)
 #60 seconds * 60 minutes * 24 hours * 30 days
 time_month = time_today - (60*60*24*30)
+
+config = configparser.ConfigParser()
+config.read('config.cfg')
+api_keys = config['apikeys']
+
+eve = evelink.eve.EVE()
+
+chars = []
+for (key_id, vcode) in api_keys.items():
+    api = evelink.api.API(api_key = (int(key_id),vcode))
+    account = evelink.account.Account(api)
+    key_info = account.key_info()
+    for c_id in key_info.result['characters']:
+        chars.append(evelink.char.Char(char_id = c_id, api=api))
 
 inventory = {}
 station_map = {}
@@ -51,7 +61,7 @@ class inventory_item(object):
         if not self.type_name:
             self.type_name = trans['type']['name']
     def add_order(self, order):
-        if order['type'] == 'sell':
+        if order['type'] == 'sell' and order['status'] == 'active':
             self.stats_current = False
             self.orders.append(order)
     def update_sale_stats(self):
@@ -134,7 +144,7 @@ class inventory_item(object):
         else:
             return self.month_revenue
 
-def get_transactions():
+def get_transactions(char):
     #refresh time
     time_today = time.time()
     #60 seconds * 60 minutes * 24 hours * 7 days
@@ -160,8 +170,8 @@ def get_transactions():
         transactions, current, expires = char.wallet_transactions(before_id = oldest_trans_id, limit=2560)
     print("Done.")
 
-def get_orders():
-    print("Getting orders..."
+def get_orders(char):
+    print("Getting orders...")
     orders, current, expires = char.orders()
     for order_id in orders:
         order = orders[order_id]
@@ -190,7 +200,8 @@ def print_idle_orders():
     for item in sorted(filtered_items, key=lambda item: item.est_profit(), reverse=True):
         item.print_general_stats()
 
-get_transactions()
-get_orders()
+for char in chars:
+    get_transactions(char)
+    get_orders(char)
 print("---------------------")
 print_urgent_orders()
